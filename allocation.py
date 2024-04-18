@@ -31,13 +31,13 @@ M_times = {
 
 # Compute value matrix based on arrival and death times
 dict = {}
-for o, _ in enumerate(organs):
-    for p, _ in enumerate(patients):
+for _, o in enumerate(organs):
+    for _, p in enumerate(patients):
         assignment_time = organ_times[o]
         if E_times[p] <= assignment_time <= M_times[p]:
-            dict{(o, p)} = 1
+            dict[(o, p)] = 1
         else:
-            dict{(o, p)} = 0
+            dict[(o, p)] = 0
 
 assignment, value = multidict(dict)
 
