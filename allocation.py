@@ -2,11 +2,16 @@ import gurobipy as gp
 from gurobipy import GRB, LinExpr
 import numpy as np
 
+def discretize_diff(diff):
+    if diff <= 3: return 1  
+    if (diff > 3) & (diff <= 7): return 0.9
+    if diff > 7: return 0.75
+
 def allocate_organs(
     organs, patients, organ_times, E_times, M_times, 
     obj, flag_liver_size=False, alpha=0.5,
     women_indices=None, small_organ_indices=None,
-    flag_print_allocation=False
+    flag_print_allocation=False, flag_discrete_t=False
 ):
     """
     @param obj: objective to maximize
@@ -31,16 +36,20 @@ def allocate_organs(
             for _, p in enumerate(patients):
                 assignment_time = organ_times[o]
                 if E_times[p] <= assignment_time <= M_times[p]:
+                    if flag_discrete_t: 
+                        val = discretize_diff(M_times[p]-assignment_time)
+                    else:
+                        val = 1
                     if p in women_indices:
                         if o in small_organ_indices: 
-                            value_dict[(o, p)] = 1 + alpha*1
+                            value_dict[(o, p)] = val + alpha*1
                         else:
-                            value_dict[(o, p)] = 1
+                            value_dict[(o, p)] = val
                     else:
                         if o in small_organ_indices: 
-                            value_dict[(o, p)] = 1 + alpha*0.5
+                            value_dict[(o, p)] = val + alpha*0.5
                         else:
-                            value_dict[(o, p)] = 1 + alpha*1
+                            value_dict[(o, p)] = val + alpha*1
                 else:
                     value_dict[(o, p)] = 0
 
@@ -83,7 +92,7 @@ def allocate_organs(
         raise ValueError(f"{obj} is not a valid objective function!")
 
     m.optimize()
-
+    n_organ_allocate = 0
     if flag_print_allocation:
         if m.status == GRB.OPTIMAL:
             print("Optimal solution found:")
@@ -91,6 +100,8 @@ def allocate_organs(
                 for j in range(omega):
                     if x[j+1, i+1].x > 0.5:  # Print only allocations with value > 0.5
                         print(f"Agent {i} gets item {j}")
+                        n_organ_allocate += 1
+            print(f'num organs allocation: {n_organ_allocate}')
         else:
             print("No optimal solution found")
 
@@ -128,6 +139,6 @@ if __name__ == '__main__':
         organs, patients, organ_times, E_times, M_times, 
         obj='envy', flag_liver_size=True, 
         women_indices=women_indices, small_organ_indices=small_organ_indices,
-        flag_print_allocation=True
+        flag_print_allocation=True, flag_discrete_t=True
     )
 
