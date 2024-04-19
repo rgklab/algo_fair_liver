@@ -25,7 +25,6 @@ def allocate_organs(
                 value_dict[(o, p)] = 1
             else:
                 value_dict[(o, p)] = 0
-
     if flag_liver_size:
         alpha = 0.5
         for _, o in enumerate(organs):
