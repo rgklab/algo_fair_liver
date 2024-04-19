@@ -2,7 +2,7 @@ import gurobipy as gp
 from gurobipy import GRB, LinExpr
 import numpy as np
 
-def allocate_organs(organs, patients, organ_times, E_times, M_times, envy_multiplier, obj, flag_liver_size=False, women_indices=None, small_organ_indices=None):
+def allocate_organs(organs, patients, organ_times, E_times, M_times, obj, flag_liver_size=False, women_indices=None, small_organ_indices=None):
     """
     @param obj: objective to maximize
         welfare: only consider sum of all values
@@ -20,6 +20,7 @@ def allocate_organs(organs, patients, organ_times, E_times, M_times, envy_multip
                 value_dict[(o, p)] = 1
             else:
                 value_dict[(o, p)] = 0
+                
     if flag_liver_size:
         alpha = 0.5
         for _, o in enumerate(organs):
@@ -28,16 +29,16 @@ def allocate_organs(organs, patients, organ_times, E_times, M_times, envy_multip
                 if E_times[p] <= assignment_time <= M_times[p]:
                     if p in women_indices:
                         if o in small_organ_indices: 
-                            dict[(o, p)] = 1 + alpha*1
+                            value_dict[(o, p)] = 1 + alpha*1
                         else:
-                            dict[(o, p)] = 1
+                            value_dict[(o, p)] = 1
                     else:
                         if o in small_organ_indices: 
-                            dict[(o, p)] = 1 + alpha*0.5
+                            value_dict[(o, p)] = 1 + alpha*0.5
                         else:
-                            dict[(o, p)] = 1 + alpha*1
+                            value_dict[(o, p)] = 1 + alpha*1
                 else:
-                    dict[(o, p)] = 0
+                    value_dict[(o, p)] = 0
 
     assignment, value = gp.multidict(value_dict)
 
@@ -87,7 +88,7 @@ def allocate_organs(organs, patients, organ_times, E_times, M_times, envy_multip
 
     m.optimize()
 
-    return m
+    return m, x
 
 
 if __name__ == '__main__':
@@ -118,9 +119,10 @@ if __name__ == '__main__':
         organ_times[i+1] = oi
 
    # m = allocate_organs(organs, patients, organ_times, E_times, M_times, obj='welfare')
-    m = allocate_organs(organs, patients, organ_times, E_times, M_times, obj='welfare', flag_liver_size=True, women_indices=women_indices, small_organ_indices=small_organ_indices)
+    m, x = allocate_organs(organs, patients, organ_times, E_times, M_times, obj='welfare', flag_liver_size=True, women_indices=women_indices, small_organ_indices=small_organ_indices)
 
-    flag_print_allocation = False
+    flag_print_allocation = True
+    n_organ_allocate = 0 
     if flag_print_allocation:
         if m.status == GRB.OPTIMAL:
             print("Optimal solution found:")
@@ -128,5 +130,8 @@ if __name__ == '__main__':
                 for j in range(omega):
                     if x[j+1, i+1].x > 0.5:  # Print only allocations with value > 0.5
                         print(f"Agent {i} gets item {j}")
+                        n_organ_allocate += 1
+
         else:
             print("No optimal solution found")
+        print(n_organ_allocate)
