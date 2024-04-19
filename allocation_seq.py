@@ -105,7 +105,7 @@ def allocate_organs(
         else:
             print("No optimal solution found")
 
-    return m, value_dict
+    return m, x, value_dict
 
 def update_model(m, value_dict, new_agents, new_goods):
     for i in new_agents:
@@ -157,19 +157,24 @@ if __name__ == '__main__':
     for i, oi in enumerate(organ_t_rand):
         organ_times[i+1] = oi
 
-    m, value_dict = allocate_organs(
+    m, x, value_dict = allocate_organs(
         organs, patients, organ_times, E_times, M_times, 
         obj='envy', flag_liver_size=True, 
         women_indices=women_indices, small_organ_indices=small_organ_indices,
-        flag_print_allocation=True, flag_discrete_t=True
+        flag_print_allocation=False, flag_discrete_t=True
     )
     n_range = add_T
     for j in range((T-init_T)//add_T):
-        for i in range(n):
-            for j in range(omega):
+        organ_range = organ_t_rand <= n_range
+        n_organ_all = 0 
+        for i in patients:
+            for j in range(sum(organ_range)):
                 if x[j+1, i+1].x > 0.5:
+                    print(f"Agent {i} gets item {j}")
+                    n_organ_all += 1
                     ### ToDO: find previously alloacted organs and people in add_T time and remove them from the system
                     ### remove them from value_dict
+        print(f'num organs allocated until time {n_range}')
         organ_t_rand, E_times_rand, women_indices, small_organ_indices = gen_data(add_T, add_omega, add_n, init_t=init_T)
         init_T += add_T
         n_range += add_T
