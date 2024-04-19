@@ -110,7 +110,7 @@ def allocate_organs(
 def update_model(m, value_dict, new_agents, new_goods):
     for i in new_agents:
         for j in goods:
-            x[i,j] = model.addVar(vtype=GRB.BINARY, name=f"x[{i},{j}]")
+            x[i,j] = m.addVar(vtype=GRB.BINARY, name=f"x[{i},{j}]")
         m.addConstr(sum(x[i,j] for j in goods) == 1, name=f"AllocateNewGoods_{i}")
     
     for j in new_goods:
@@ -118,7 +118,7 @@ def update_model(m, value_dict, new_agents, new_goods):
     
     # Update utility calculations
     for i in agents:
-        m.addConstr(sum(utilities[i].get(j, 0) * x[i,j] for j in goods) == model.getVarByName(f"Utility[{i}]"), name=f"UpdateUtility_{i}")
+        m.addConstr(sum(utilities[i].get(j, 0) * x[i,j] for j in goods) == m.getVarByName(f"Utility[{i}]"), name=f"UpdateUtility_{i}")
     
     m.update()
     m.optimize()
