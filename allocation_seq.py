@@ -7,21 +7,9 @@ def discretize_diff(diff):
     if (diff > 3) & (diff <= 7): return 0.9
     if diff > 7: return 0.75
 
-def allocate_organs(
-    organs, patients, organ_times, E_times, M_times, 
-    obj, flag_liver_size=False, alpha=0.5,
-    women_indices=None, small_organ_indices=None,
-    flag_print_allocation=False, flag_discrete_t=False
-):
-    """
-    @param obj: objective to maximize
-        welfare: only consider sum of all values
-        envy: welfare penalized by envy between patients
-    """
+def create_value_dict(organs, patients, organ_times, E_times, M_times, flag_liver_size=False, 
+                      alpha=0.5, women_indices=None, small_organ_indices=None, flag_discrete_t=False):
     # Compute value matrix based on arrival and death times
-    omega = len(organs)
-    n = len(patients)
-
     value_dict = {}
     for _, o in enumerate(organs):
         for _, p in enumerate(patients):
@@ -52,9 +40,17 @@ def allocate_organs(
                             value_dict[(o, p)] = val + alpha*1
                 else:
                     value_dict[(o, p)] = 0
+    return value_dict
 
+def allocate_organs(organs, patients, obj, value_dict, flag_print_allocation=False):
+    """
+    @param obj: objective to maximize
+        welfare: only consider sum of all values
+        envy: welfare penalized by envy between patients
+    """
+    omega = len(organs)
+    n = len(patients)
     assignment, value = gp.multidict(value_dict)
-
     # Compute envy matrix if necessary
     if obj == 'envy':
         envy = {}
@@ -71,18 +67,14 @@ def allocate_organs(
 
     # Declare and initialize model
     m = gp.Model('organ_alloc')
-
     # Decision variables
     x = m.addVars(assignment, name='assign')
-
     # Organ constraints
     # Each organ is assigned to exactly one patient
     organ_cstr = m.addConstrs((x.sum(o, '*') == 1 for o in organs), name='organ')
-
     # Patient constraints
     # Each patient is assigned at most one organ
     patient_cstr = m.addConstrs((x.sum('*', p) <= 1 for p in patients), name='patient')
-
     # Objective function
     if obj == 'welfare':
         m.setObjective(x.prod(value), GRB.MAXIMIZE)
@@ -105,25 +97,60 @@ def allocate_organs(
         else:
             print("No optimal solution found")
 
-    return m, x, value_dict
+    return m, x
 
-def update_model(m, organs, patients, new_organs, new_patients, allocations):
+def update_model(m, x, organs, patients, new_organs, new_patients, value_dict, rm_list, value_dict_new, obj='envy'):
     # Remove variables for allocated organs and patients
-    for (o, p) in allocations.keys():
-        m.remove(m.getVarByName(f'x[{o},{p}]'))
+    assignment, value = gp.multidict(value_dict_new)
 
+    for (o, p) in value_dict.keys():
+        if o in rm_list:
+            m.remove(m.getVarByName(f'assign[{o},{p}]'))
+            if (o, p) in x:
+                del x[o, p]
     # Add new variables for new organs and patients
     for o in new_organs:
-        for p in patients + new_patients:
-            m.addVar(vtype=GRB.BINARY, name=f'x[{o},{p}]')
+        for p in patients:
+            x[o, p] = m.addVar(vtype=GRB.BINARY, name=f'assign[{o},{p}]')
     
     for p in new_patients:
-        for o in organs + new_organs:
-            m.addVar(vtype=GRB.BINARY, name=f'x[{o},{p}]')
+        for o in organs:
+            x[o, p] = m.addVar(vtype=GRB.BINARY, name=f'assign[{o},{p}]')
 
     m.update()
-    #m.optimize()
-    return m
+    m.addConstrs((x.sum(o, '*') == 1 for o in new_organs), name='organ')
+    m.addConstrs((x.sum('*', p) <= 1 for p in new_patients), name='patient')
+    if obj == 'envy':
+        n = len(patients)
+        envy = {}
+        for p in patients:
+            for o in organs:
+                envy_op = 0
+                value_o = value[(o, p)]
+                for q in organs:
+                    if q != o:
+                        value_q = value[(q, p)]
+                        if value_q > value_o:
+                            envy_op += value_q - value_o
+                envy[(o, p)] = envy_op
+    if obj == 'welfare':
+        m.setObjective(x.prod(value), GRB.MAXIMIZE)
+    elif obj == 'envy':
+        m.setObjective(x.prod(value) - (1/n) * x.prod(envy), GRB.MAXIMIZE)
+    m.optimize()
+    if m.status == GRB.OPTIMAL:
+        print("Optimal solution found.")
+    elif m.status == GRB.INFEASIBLE:
+        print("Model is infeasible.")
+        m.computeIIS()
+        m.write("model.ilp")
+        print("Infeasibility report written to model.ilp")
+    elif m.status == GRB.UNBOUNDED:
+        print("Model is unbounded.")
+    else:
+        print("Optimization was stopped with status", m.status)
+
+    return m, x
 
 def gen_data(T, omega, n, init_t=0):
     organ_t_rand = np.random.choice(T, omega, replace=False) + 1 + init_t
@@ -144,6 +171,7 @@ if __name__ == '__main__':
     add_omega = 3
     init_n = 12
     add_n = 5
+    obj = 'envy'
     flag_organ_size = True
     organ_t_rand, E_times_rand, women_indices, small_organ_indices = gen_data(init_T, init_omega, init_n)
     patients = list(np.arange(1, init_n + 1, 1))
@@ -158,46 +186,63 @@ if __name__ == '__main__':
     for i, oi in enumerate(organ_t_rand):
         organ_times[i+1] = oi
 
-    m, x, value_dict = allocate_organs(
-        organs, patients, organ_times, E_times, M_times, 
-        obj='envy', flag_liver_size=True, 
-        women_indices=women_indices, small_organ_indices=small_organ_indices,
-        flag_print_allocation=False, flag_discrete_t=True
-    )
+
+    value_dict = create_value_dict(organs, patients, organ_times, E_times, 
+                                   M_times, flag_liver_size=True, alpha=0.5, 
+                                   women_indices=women_indices, small_organ_indices=small_organ_indices, 
+                                   flag_discrete_t=False)
+    
+    m, x = allocate_organs(organs, patients, obj, value_dict, flag_print_allocation=False)
+    
     n_range = add_T
     available_patients = patients
     available_organs = organs
-    for j in range((T-init_T)//add_T):
-        organ_range = organ_t_rand <= n_range
+    for ttime in range((T-init_T)//add_T):
+        print('current time: ',n_range)
+        #seperate organs became available befor n_range time
+        keys = np.fromiter(organ_times.keys(), dtype=float)
+        vals = np.fromiter(organ_times.values(), dtype=float)
+        organ_range = vals <= n_range
+        organ_range = keys[organ_range]
+        organ_times = {k: organ_times[k] for k in keys[vals > n_range]}
+
+        # Remove allocated organs and patients
+        rm_list = []
         n_organ_all = 0 
         new_organs, new_patients = [], []
-        # Remove allocated organs and patients
-        for (o, p) in value_dict:
-            if x[o, p].X > 0.5 and p in available_patients and o in available_organs:
-                available_patients.remove(p)
-                available_organs.remove(o)
-
-        for i in patients:
-            for j in range(sum(organ_range)):
-                if x[j+1, i+1].x > 0.5:
-                    print(f"Agent {i} gets item {j}")
+        n_organ_all = 0
+        for i in available_patients:
+            for j in organ_range:
+                if x[j, i].x > 0.5:
+                    print(f"Patient {i} gets organ {j}")
+                    available_patients.remove(i)
                     n_organ_all += 1
-                    ### ToDO: find previously alloacted organs and people in add_T time and remove them from the system
-                    ### remove them from value_dict
-        print(f'num organs allocated until time {n_range}')
+        for j in organ_range:
+            available_organs.remove(j)
+            rm_list.append(j)
+        print(f'num organs allocated from {n_range-add_T} until {n_range} is {n_organ_all} out of {len(organ_range)}')
+        #Update the patients and organ instances
         new_organ_t, new_E_times, new_w_indices, new_s_organ_indices = gen_data(add_T, add_omega, add_n, init_t=init_T)
-        new_patients.extend(range(max(patients)+1, max(patients)+1+add_n))
-        new_organs.extend(range(max(organs)+1, max(organs)+1+add_omega))
+        new_patients.extend(range(max(available_patients)+1, max(available_patients)+1+add_n))
+        new_organs.extend(range(max(available_organs)+1, max(available_organs)+1+add_omega))
+        # Updates input times
         organ_times.update({o: t for o, t in zip(new_organs, new_organ_t)})
         E_times.update({p: t for p, t in zip(new_patients, new_E_times)})
         M_times.update({p: np.random.randint(E_times[p], T) for p in new_patients})
-
-        m = update_model(m, organs, patients, new_organs, new_patients, allocations)
-        available_patients.update(new_patients)
-        available_organs.update(new_organs)
-        patients.extend(new_patients)
-        organs.extend(new_organs)
+        new_w_indices += init_T
+        new_s_organ_indices += init_omega
+        #update the model based on new organs and patients 
+        available_patients.extend(new_patients)
+        available_organs.extend(new_organs)
+        value_dict_new = create_value_dict(available_organs, available_patients, organ_times, E_times, 
+                                   M_times, flag_liver_size=True, alpha=0.5, 
+                                   women_indices=new_w_indices, small_organ_indices=new_s_organ_indices, 
+                                   flag_discrete_t=False)
+        
+        m, x = update_model(m, x, available_organs, available_patients, new_organs, new_patients, value_dict, rm_list, value_dict_new, obj=obj)
+        value_dict = value_dict_new
         init_T += add_T
         n_range += add_T
+        init_omega += add_omega
 
 
