@@ -2,8 +2,7 @@ import gurobipy as gp
 from gurobipy import GRB, LinExpr
 import numpy as np
 import matplotlib.pyplot as plt
-
-np.random.seed(100)
+import pickle
 
 def discretize_diff(diff):
     if diff <= 3: return 1  
@@ -73,7 +72,7 @@ def cal_envy(patients, organs, value_dict, all_patients=[]):
                             value_q = value_dict[(q, p)]
                             if value_q > value_o:
                                 envy_op += value_q - value_o
-                    other_envy += (envy_op)/len(organs)
+                    other_envy += (envy_op) #/len(organs)
         total_envy += other_envy
     #obj = welfare - (1/n) * total_envy
     return round(total_envy, 2)
@@ -197,7 +196,7 @@ def gen_data(T, omega, n, init_t=0):
     small_organ_indices = np.random.choice(omega, int(0.25 * n), replace=False) + 1
     return organ_t_rand, E_times_rand, women_indices, small_organ_indices
 
-   
+np.random.seed(300)   
 if __name__ == '__main__':
     # List of organs
     T = 800 #100
@@ -272,7 +271,7 @@ if __name__ == '__main__':
         #Find envy objective value
         envy_val_allocated = cal_envy(rm_p_list, rm_o_list, value_dict)
         envy_val_all = cal_envy(rm_p_list, rm_o_list, value_dict, prev_patients)
-        total_envy += envy_val_allocated
+        total_envy += envy_val_all
         envy_obj_list.append(total_envy)
         print(f'envy obj value for allocated patients: {envy_val_allocated} and all patients at that time frame: {envy_val_all}')
         
@@ -300,6 +299,11 @@ if __name__ == '__main__':
         init_T += add_T
         n_range += add_T
         init_omega += add_omega
+
+    with open(f"results/envy_w_{obj}_t_{T}", "wb") as fp: 
+        pickle.dump(envy_obj_list, fp)
+    with open(f"results/envy_t_{T}", "wb") as fp:
+        pickle.dump(x_time*add_T, fp)
 
     plt.figure()
     plt.plot(x_time*add_T, envy_obj_list)
