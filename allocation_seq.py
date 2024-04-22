@@ -45,21 +45,39 @@ def create_value_dict(organs, patients, organ_times, E_times, M_times, flag_live
                     value_dict[(o, p)] = 0
     return value_dict
 
-def cal_envy(patients, organs, value_dict):
+def cal_envy(patients, organs, value_dict, all_patients=[]):
     total_envy = 0
-    for p in patients:
-        for o in organs:
-            envy_op = 0
-            value_o = value_dict[(o, p)]
-            for q in organs:
-                if q != o:
-                    value_q = value_dict[(q, p)]
-                    if value_q > value_o:
-                        envy_op += value_q - value_o
-            total_envy += envy_op
-            #total_envy += envy_op * x[o, p].x
-            #envy[(o, p)] = envy_op
+    welfare = 0 
+    n = len(patients)
+    for i, p in enumerate(patients):
+        o = organs[i]
+        envy_op = 0
+        value_o = value_dict[(o, p)]
+        for q in organs:
+            if q != o:
+                value_q = value_dict[(q, p)]
+                if value_q > value_o:
+                    envy_op += value_q - value_o
+        total_envy += envy_op
+        welfare += value_o
+
+    if len(all_patients) != 0:
+        other_envy = 0
+        for p in all_patients:
+            if p not in patients:
+                for o in organs:
+                    envy_op = 0
+                    value_o = value_dict[(o, p)]
+                    for q in organs:
+                        if q != o:
+                            value_q = value_dict[(q, p)]
+                            if value_q > value_o:
+                                envy_op += value_q - value_o
+                    other_envy += (envy_op)/len(organs)
+        total_envy += other_envy
+    #obj = welfare - (1/n) * total_envy
     return round(total_envy, 2)
+    
             
 def allocate_organs(organs, patients, obj, value_dict, flag_print_allocation=False):
     """
@@ -191,8 +209,9 @@ if __name__ == '__main__':
     add_omega = 3 #np.random.randint(1, high=4)
     init_n = 12
     add_n = np.random.randint(int(add_omega*1.5), high=7) #5
-    obj = 'welfare' #'envy', 'welfare'
+    obj = 'envy' #'envy', 'welfare'
     flag_organ_size = True
+    flag_discrete_t = True
     organ_t_rand, E_times_rand, women_indices, small_organ_indices = gen_data(init_T, init_omega, init_n)
     patients = list(np.arange(1, init_n + 1, 1))
     organs = list(np.arange(1, init_omega + 1, 1))
@@ -210,7 +229,7 @@ if __name__ == '__main__':
     value_dict = create_value_dict(organs, patients, organ_times, E_times, 
                                    M_times, flag_liver_size=True, alpha=0.5, 
                                    women_indices=women_indices, small_organ_indices=small_organ_indices, 
-                                   flag_discrete_t=False)
+                                   flag_discrete_t=flag_discrete_t)
     
     m, x = allocate_organs(organs, patients, obj, value_dict, flag_print_allocation=False)
     
@@ -241,10 +260,10 @@ if __name__ == '__main__':
                 if x[j, i].x > 0.5:
                     print(f"Patient {i} gets organ {j}")
                     rm_p_list.append(i)
+                    rm_o_list.append(j)
                     n_organ_all += 1
-        for j in organ_range:
+        for j in rm_o_list:
             available_organs.remove(j)
-            rm_o_list.append(j)
         for i in rm_p_list:
             available_patients.remove(i)
         print(f'num organs allocated from {n_range-add_T} until {n_range} is {n_organ_all} out of {len(organ_range)}')
@@ -252,8 +271,8 @@ if __name__ == '__main__':
         prec_alloc_organ.append(round(100*n_organ_all/len(organ_range), 1))
         #Find envy objective value
         envy_val_allocated = cal_envy(rm_p_list, rm_o_list, value_dict)
-        envy_val_all = cal_envy(prev_patients, rm_o_list, value_dict)
-        total_envy += envy_val_all
+        envy_val_all = cal_envy(rm_p_list, rm_o_list, value_dict, prev_patients)
+        total_envy += envy_val_allocated
         envy_obj_list.append(total_envy)
         print(f'envy obj value for allocated patients: {envy_val_allocated} and all patients at that time frame: {envy_val_all}')
         
@@ -273,7 +292,7 @@ if __name__ == '__main__':
         value_dict = create_value_dict(available_organs, available_patients, organ_times, E_times, 
                                    M_times, flag_liver_size=True, alpha=0.5, 
                                    women_indices=new_w_indices, small_organ_indices=new_s_organ_indices, 
-                                   flag_discrete_t=False)
+                                   flag_discrete_t=flag_discrete_t)
         
         m, x = allocate_organs(available_organs, available_patients, obj, value_dict, flag_print_allocation=False)
         #m, x = update_model(m, x, available_organs, available_patients, new_organs, new_patients, value_dict, rm_list, value_dict_new, obj=obj)
